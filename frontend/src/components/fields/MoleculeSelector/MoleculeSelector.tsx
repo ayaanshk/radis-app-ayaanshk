@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import FormControl from "@mui/joy/FormControl";
 import FormLabel from "@mui/joy/FormLabel";
 import Autocomplete from "@mui/joy/Autocomplete";
@@ -16,16 +16,20 @@ import {
   moleculeOptionsHitemp,
 } from "./molecules";
 
-
-export interface MoleculeSelectorProps {
+interface MoleculeSelectorProps {
   validationError?: FieldError;
-  onChange: (...event: string[]) => void;
+  onChange: (value: string) => void;
   value: string;
   control: Control<FormValues>;
   autofocus?: boolean;
   isNonEquilibrium: boolean;
   databaseWatch: Database;
 }
+
+const databaseMoleculeMap: Record<Database, string[]> = {
+  [Database.GEISA]: moleculeOptionsGesia,
+  [Database.HITEMP]: moleculeOptionsHitemp,
+};
 
 export const MoleculeSelector: React.FC<MoleculeSelectorProps> = ({
   validationError,
@@ -36,19 +40,39 @@ export const MoleculeSelector: React.FC<MoleculeSelectorProps> = ({
   databaseWatch,
 }) => {
   const [input, setInput] = useState("");
-  const [moleculeOptions, setMoleculeOptions] = useState<string[]>([]);
 
-  useEffect(() => {
+  // Memoize molecule options based on dependencies
+  const moleculeOptions = useMemo(() => {
     if (isNonEquilibrium) {
-      setMoleculeOptions(moleculeOptionsNonequimolecules);
-    } else if (databaseWatch === Database.GEISA) {
-      setMoleculeOptions(moleculeOptionsGesia);
-    } else if (databaseWatch === Database.HITEMP) {
-      setMoleculeOptions(moleculeOptionsHitemp);
-    } else {
-      setMoleculeOptions(moleculeOptionsEquimolecules);
+      return moleculeOptionsNonequimolecules;
     }
+    return databaseMoleculeMap[databaseWatch] || moleculeOptionsEquimolecules;
   }, [isNonEquilibrium, databaseWatch]);
+
+  // Memoize formatted options to avoid recalculating on every render
+  const formattedOptions = useMemo(
+    () => moleculeOptions.map(addSubscriptsToMolecule),
+    [moleculeOptions]
+  );
+
+  const currentValue = useMemo(
+    () => addSubscriptsToMolecule(value || ""),
+    [value]
+  );
+
+  const handleInputChange = (
+    _: React.SyntheticEvent<Element, Event>,
+    newInput: string
+  ) => {
+    setInput(addSubscriptsToMolecule(newInput.toUpperCase()));
+  };
+
+  const handleChange = (
+    _: React.SyntheticEvent<Element, Event>,
+    value: string | null
+  ) => {
+    onChange(value ? removeSubscriptsFromMolecule(value) : "");
+  };
 
   return (
     <FormControl>
@@ -56,25 +80,21 @@ export const MoleculeSelector: React.FC<MoleculeSelectorProps> = ({
       <Autocomplete
         id="molecule-selector"
         variant="outlined"
-        options={moleculeOptions.map((molecule) =>
-          addSubscriptsToMolecule(molecule)
-        )}
-        error={validationError !== undefined}
+        options={formattedOptions}
+        error={!!validationError}
         autoFocus={autofocus}
-        value={addSubscriptsToMolecule(value || "")}
+        value={currentValue}
         inputValue={input}
-        onInputChange={(_, newInput) => {
-          setInput(addSubscriptsToMolecule(newInput.toUpperCase()));
-        }}
-        renderOption={(props, value) => {
-          return <li {...props}>{addSubscriptsToMolecule(value)}</li>;
-        }}
-        onChange={(
-          _: React.SyntheticEvent<Element, Event>,
-          value: string | null
-        ) => {
-          const newMolecule = value ? removeSubscriptsFromMolecule(value) : "";
-          onChange(newMolecule);
+        onInputChange={handleInputChange}
+        renderOption={(props, option) => (
+          <li {...props}>{addSubscriptsToMolecule(option)}</li>
+        )}
+        onChange={handleChange}
+        sx={{
+          width: "100%",
+          "& .MuiAutocomplete-input": {
+            textTransform: "none", // Prevent automatic capitalization
+          },
         }}
       />
     </FormControl>
